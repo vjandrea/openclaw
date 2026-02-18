@@ -42,6 +42,29 @@ RUN pnpm build
 ENV OPENCLAW_PREFER_PNPM=1
 RUN pnpm ui:build
 
+# Install helper CLIs (gog, wacli) into the container.
+# gog: build from source (per upstream docs). wacli: Go module install.
+ARG GOGCLI_REF=2df8ece2f629
+ARG WACLI_VERSION=v0.2.0
+ARG GO_VERSION=1.24.4
+USER root
+RUN apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends git make ca-certificates && \
+    curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz" -o /tmp/go.tgz && \
+    tar -C /usr/local -xzf /tmp/go.tgz && \
+    git clone https://github.com/steipete/gogcli.git /tmp/gogcli && \
+    cd /tmp/gogcli && \
+    git checkout "${GOGCLI_REF}" && \
+    PATH="/usr/local/go/bin:${PATH}" make && \
+    install -m 0755 ./bin/gog /usr/local/bin/gog && \
+    GOBIN=/usr/local/bin /usr/local/go/bin/go install github.com/steipete/wacli/cmd/wacli@"${WACLI_VERSION}" && \
+    mkdir -p /home/ubuntu/go/bin && \
+    ln -sf /usr/local/bin/wacli /home/ubuntu/go/bin/wacli && \
+    rm -rf /tmp/gogcli /tmp/go.tgz /usr/local/go && \
+    apt-get purge -y git make && \
+    apt-get autoremove -y && \
+    rm -rf /var/lib/apt/lists/* /root/go
+
 ENV NODE_ENV=production
 
 # Allow non-root user to write temp files during runtime/tests.
