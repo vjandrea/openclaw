@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1.7
 FROM node:22-bookworm
 
 # Install Bun (required for build scripts)
@@ -5,6 +6,10 @@ RUN curl -fsSL https://bun.sh/install | bash
 ENV PATH="/root/.bun/bin:${PATH}"
 
 RUN corepack enable
+ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
+ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
+
+RUN git config --global advice.detachedHead false
 
 WORKDIR /app
 
@@ -21,7 +26,19 @@ COPY ui/package.json ./ui/package.json
 COPY patches ./patches
 COPY scripts ./scripts
 
-RUN pnpm install --frozen-lockfile
+RUN --mount=type=cache,target=/root/.cache/node/corepack \
+    --mount=type=cache,target=/root/.local/share/pnpm/store \
+    pnpm install --frozen-lockfile
+
+# Install Gemini CLI (pnpm is available via corepack).
+ENV NPM_CONFIG_PREFIX="/home/node/.npm-global"
+ENV PATH="${NPM_CONFIG_PREFIX}/bin:${PATH}"
+RUN mkdir -p /home/node/.npm-global && \
+    chown -R node:node /home/node/.npm-global && \
+    su node -c "npm install -g @google/gemini-cli@latest" && \
+    gemini_bin="/home/node/.npm-global/bin/gemini" && \
+    chmod +x "$gemini_bin" && \
+    install -m 0755 "$gemini_bin" /usr/local/bin/gemini
 
 # Optionally install Chromium and Xvfb for browser automation.
 # Build with: docker build --build-arg OPENCLAW_INSTALL_BROWSER=1 ...
@@ -64,6 +81,23 @@ RUN apt-get update && \
     apt-get purge -y git make && \
     apt-get autoremove -y && \
     rm -rf /var/lib/apt/lists/* /root/go
+
+# Create a symlink to point wacli's default config dir (~/.wacli) 
+# to the mounted volume location (~/.config/wacli),
+# accounting for the nested .wacli directory.
+RUN mkdir -p /home/node/.config/wacli && \
+    ln -sfn /home/node/.config/wacli /home/node/.wacli
+
+# Install Homebrew (Linuxbrew)
+RUN apt-get update && apt-get install -y sudo build-essential curl file git && \
+    echo 'node ALL=(ALL) NOPASSWD:ALL' >> /etc/sudoers && \
+    su node -c 'NONINTERACTIVE=1 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"' && \
+    (echo; echo 'eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"') >> /etc/profile && \
+    apt-get clean && \
+    sed -i '$d' /etc/sudoers
+
+# Add brew to the PATH for all subsequent RUN commands and for the final container environment
+ENV PATH="/home/linuxbrew/.linuxbrew/bin:${PATH}"
 
 ENV NODE_ENV=production
 
