@@ -1,4 +1,6 @@
-.PHONY: build buildx buildx-init
+.PHONY: build buildx buildx-init restart
+
+CACHE_FROM := $(shell if [ -f .buildx-cache/index.json ]; then echo "--cache-from=type=local,src=.buildx-cache"; fi)
 
 build: buildx
 
@@ -9,6 +11,10 @@ buildx: buildx-init
 	docker buildx build \
 		--tag openclaw:local-gemini \
 		--load \
-		--cache-from=type=local,src=.buildx-cache \
+		$(CACHE_FROM) \
 		--cache-to=type=local,dest=.buildx-cache,mode=max \
 		.
+
+restart:
+	docker compose down
+	docker compose up -d --build
