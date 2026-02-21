@@ -10,6 +10,7 @@ import { formatInstallFailureMessage } from "./skills-install-output.js";
 import {
   hasBinary,
   loadWorkspaceSkillEntries,
+  resetHasBinaryCache,
   resolveSkillsInstallPreferences,
   type SkillEntry,
   type SkillInstallSpec,
@@ -273,6 +274,7 @@ async function ensureUvInstalled(params: {
     timeoutMs: params.timeoutMs,
   });
   if (brewResult.code === 0) {
+    resetHasBinaryCache();
     return undefined;
   }
 
@@ -294,6 +296,7 @@ async function installGoViaApt(timeoutMs: number): Promise<SkillInstallResult | 
     await runBestEffortCommand(aptUpdateArgv, { timeoutMs });
     const aptResult = await runCommandSafely(aptInstallArgv, { timeoutMs });
     if (aptResult.code === 0) {
+      resetHasBinaryCache();
       return undefined;
     }
     return createInstallFailure({
@@ -326,6 +329,7 @@ async function installGoViaApt(timeoutMs: number): Promise<SkillInstallResult | 
     timeoutMs,
   });
   if (aptResult.code === 0) {
+    resetHasBinaryCache();
     return undefined;
   }
 
@@ -349,6 +353,7 @@ async function ensureGoInstalled(params: {
       timeoutMs: params.timeoutMs,
     });
     if (brewResult.code === 0) {
+      resetHasBinaryCache();
       return undefined;
     }
     return createInstallFailure({
@@ -380,6 +385,7 @@ async function executeInstallCommand(params: {
     env: params.env,
   });
   if (result.code === 0) {
+    resetHasBinaryCache();
     return createInstallSuccess(result);
   }
 
@@ -387,6 +393,11 @@ async function executeInstallCommand(params: {
     message: formatInstallFailureMessage(result),
     ...result,
   });
+}
+
+function areBinsSatisfied(bins: string[]): { ok: boolean; missing: string[] } {
+  const missing = bins.filter((bin) => !hasBinary(bin));
+  return { ok: missing.length === 0, missing };
 }
 
 export async function installSkill(params: SkillInstallRequest): Promise<SkillInstallResult> {
@@ -466,5 +477,24 @@ export async function installSkill(params: SkillInstallRequest): Promise<SkillIn
     }
   }
 
-  return withWarnings(await executeInstallCommand({ argv, timeoutMs, env }), warnings);
+  const installResult = await executeInstallCommand({ argv, timeoutMs, env });
+  if (!installResult.ok && (spec.bins?.length ?? 0) > 0) {
+    resetHasBinaryCache();
+    const binCheck = areBinsSatisfied(spec.bins ?? []);
+    if (binCheck.ok) {
+      return withWarnings(
+        {
+          ...installResult,
+          ok: true,
+          message: "Installed",
+        },
+        [
+          ...warnings,
+          "Install command did not exit cleanly, but required binaries are now present.",
+        ],
+      );
+    }
+  }
+
+  return withWarnings(installResult, warnings);
 }

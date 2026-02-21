@@ -3,6 +3,7 @@ import {
   evaluateRuntimeRequires,
   hasBinary,
   isConfigPathTruthyWithDefaults,
+  resetHasBinaryCache,
   resolveConfigPath,
   resolveRuntimePlatform,
 } from "../../shared/config-eval.js";
@@ -14,7 +15,7 @@ const DEFAULT_CONFIG_VALUES: Record<string, boolean> = {
   "browser.evaluateEnabled": true,
 };
 
-export { hasBinary, resolveConfigPath, resolveRuntimePlatform };
+export { hasBinary, resetHasBinaryCache, resolveConfigPath, resolveRuntimePlatform };
 
 export function isConfigPathTruthy(config: OpenClawConfig | undefined, pathStr: string): boolean {
   return isConfigPathTruthyWithDefaults(config, pathStr, DEFAULT_CONFIG_VALUES);

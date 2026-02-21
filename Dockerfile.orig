@@ -1,0 +1,122 @@
+# syntax=docker/dockerfile:1.7
+FROM node:22-bookworm
+
+# Install Bun (required for build scripts)
+RUN curl -fsSL https://bun.sh/install | bash
+ENV PATH="/root/.bun/bin:${PATH}"
+
+RUN corepack enable
+ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
+ENV COREPACK_ENABLE_DOWNLOAD_PROMPT=0
+
+RUN git config --global advice.detachedHead false
+
+WORKDIR /app
+
+ARG OPENCLAW_DOCKER_APT_PACKAGES=""
+RUN if [ -n "$OPENCLAW_DOCKER_APT_PACKAGES" ]; then \
+      apt-get update && \
+      DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends $OPENCLAW_DOCKER_APT_PACKAGES && \
+      apt-get clean && \
+      rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*; \
+    fi
+
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
+COPY ui/package.json ./ui/package.json
+COPY patches ./patches
+COPY scripts ./scripts
+
+RUN --mount=type=cache,target=/root/.cache/node/corepack \
+    --mount=type=cache,target=/root/.local/share/pnpm/store \
+    pnpm install --frozen-lockfile
+
+# Install Gemini CLI (pnpm is available via corepack).
+ENV PNPM_HOME="/home/node/.local/share/pnpm"
+ENV NPM_CONFIG_PREFIX="/home/node/.npm-global"
+ENV PATH="${PNPM_HOME}:${NPM_CONFIG_PREFIX}/bin:${PATH}"
+RUN --mount=type=cache,target=/root/.cache/node/corepack \
+    --mount=type=cache,target=/root/.local/share/pnpm/store \
+    mkdir -p /home/node/.local/share/pnpm && \
+    mkdir -p /home/node/.npm-global && \
+    chown -R node:node /home/node/.local && \
+    chown -R node:node /home/node/.npm-global && \
+    su node -c "pnpm add -g @google/gemini-cli@latest" && \
+    gemini_bin="$(su node -c 'pnpm bin -g')/gemini" && \
+    chmod +x "$gemini_bin" && \
+    install -m 0755 "$gemini_bin" /usr/local/bin/gemini
+
+# Optionally install Chromium and Xvfb for browser automation.
+# Build with: docker build --build-arg OPENCLAW_INSTALL_BROWSER=1 ...
+# Adds ~300MB but eliminates the 60-90s Playwright install on every container start.
+# Must run after pnpm install so playwright-core is available in node_modules.
+ARG OPENCLAW_INSTALL_BROWSER=""
+RUN if [ -n "$OPENCLAW_INSTALL_BROWSER" ]; then \
+      apt-get update && \
+      DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends xvfb && \
+      node /app/node_modules/playwright-core/cli.js install --with-deps chromium && \
+      apt-get clean && \
+      rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*; \
+    fi
+
+COPY . .
+RUN pnpm build
+# Force pnpm for UI build (Bun may fail on ARM/Synology architectures)
+ENV OPENCLAW_PREFER_PNPM=1
+RUN pnpm ui:build
+
+# Install helper CLIs (gog, wacli) into the container.
+# gog: build from source (per upstream docs). wacli: Go module install.
+ARG GOGCLI_REF=2df8ece2f629
+ARG WACLI_VERSION=v0.2.0
+ARG GO_VERSION=1.24.4
+USER root
+RUN apt-get update && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends git make ca-certificates && \
+    curl -fsSL "https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz" -o /tmp/go.tgz && \
+    tar -C /usr/local -xzf /tmp/go.tgz && \
+    git clone https://github.com/steipete/gogcli.git /tmp/gogcli && \
+    cd /tmp/gogcli && \
+    git checkout "${GOGCLI_REF}" && \
+    PATH="/usr/local/go/bin:${PATH}" make && \
+    install -m 0755 ./bin/gog /usr/local/bin/gog && \
+    GOBIN=/usr/local/bin /usr/local/go/bin/go install github.com/steipete/wacli/cmd/wacli@"${WACLI_VERSION}" && \
+    mkdir -p /home/ubuntu/go/bin && \
+    ln -sf /usr/local/bin/wacli /home/ubuntu/go/bin/wacli && \
+    rm -rf /tmp/gogcli /tmp/go.tgz /usr/local/go && \
+    apt-get purge -y git make && \
+    apt-get autoremove -y && \
+    rm -rf /var/lib/apt/lists/* /root/go
+
+# Create a symlink to point wacli's default config dir (~/.wacli) 
+# to the mounted volume location (~/.config/wacli),
+# accounting for the nested .wacli directory.
+RUN mkdir -p /home/node/.config/wacli && \
+    ln -sfn /home/node/.config/wacli /home/node/.wacli
+
+# Install Homebrew (Linuxbrew)
+RUN apt-get update && apt-get install -y build-essential curl file git && \
+    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)" && \
+    (echo; echo 'eval "$(/home/linuxbrew/.linuxbrew/bin/brew shellenv)"') >> /etc/profile && \
+    chown -R node:node /home/linuxbrew/.linuxbrew && \
+    apt-get clean
+
+# Add brew to the PATH for all subsequent RUN commands and for the final container environment
+ENV PATH="/home/linuxbrew/.linuxbrew/bin:${PATH}"
+
+ENV NODE_ENV=production
+
+# Allow non-root user to write temp files during runtime/tests.
+RUN chown -R node:node /app
+
+# Security hardening: Run as non-root user
+# The node:22-bookworm image includes a 'node' user (uid 1000)
+# This reduces the attack surface by preventing container escape via root privileges
+USER node
+
+# Start gateway server with default config.
+# Binds to loopback (127.0.0.1) by default for security.
+#
+# For container platforms requiring external health checks:
+#   1. Set OPENCLAW_GATEWAY_TOKEN or OPENCLAW_GATEWAY_PASSWORD env var
+#   2. Override CMD: ["node","openclaw.mjs","gateway","--allow-unconfigured","--bind","lan"]
+CMD ["node", "openclaw.mjs", "gateway", "--allow-unconfigured"]

@@ -5,6 +5,7 @@ export {
   hasBinary,
   isBundledSkillAllowed,
   isConfigPathTruthy,
+  resetHasBinaryCache,
   resolveBundledAllowlist,
   resolveConfigPath,
   resolveRuntimePlatform,
