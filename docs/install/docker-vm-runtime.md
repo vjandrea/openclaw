@@ -28,6 +28,10 @@ binary later:
 2. Rebuild the image.
 3. Restart the containers.
 
+If you enable Gmail hooks, the `gog` step is required. The Gateway checks for
+`gog` when the Gmail watcher starts and stops early with `gog binary not found`
+when the binary is missing.
+
 **Example Dockerfile**
 
 ```dockerfile
@@ -77,6 +81,10 @@ CMD ["node","dist/index.js"]
 The URLs above are examples. For ARM-based VMs, choose the `arm64` assets. For reproducible builds, pin versioned release URLs.
 </Note>
 
+Do not mount the `gog` executable from the host except as an emergency
+workaround. Host and container architecture, libc, and file permissions can
+differ, and a mounted binary is harder to reproduce and upgrade cleanly.
+
 ## Build and launch
 
 ```bash
@@ -90,6 +98,7 @@ Verify binaries:
 
 ```bash
 docker compose exec openclaw-gateway which gog
+docker compose exec openclaw-gateway gog --help
 docker compose exec openclaw-gateway which goplaces
 docker compose exec openclaw-gateway which wacli
 ```
@@ -121,10 +130,11 @@ OpenClaw runs in Docker, but Docker is not the source of truth. All long-lived s
 | Channel/provider creds | `/home/node/.openclaw/credentials/`                    | Host volume mount      | Channel and provider credential material                                                                            |
 | Model auth profiles    | `/home/node/.openclaw/agents/`                         | Host volume mount      | `agents/<agentId>/agent/auth-profiles.json` (OAuth, API keys)                                                       |
 | Legacy OAuth key file  | `/home/node/.config/openclaw/`                         | Host volume mount      | Read-only compat for pre-migration OAuth sidecars; `openclaw doctor --fix` migrates these into `auth-profiles.json` |
+| Gmail OAuth creds      | `$XDG_CONFIG_HOME/gogcli/credentials.json`             | Host volume mount      | Persist the path `gog` reads; this is separate from OpenClaw auth profiles                                           |
 | Skill configs          | `/home/node/.openclaw/skills/`                         | Host volume mount      | Skill-level state                                                                                                   |
 | Agent workspace        | `/home/node/.openclaw/workspace/`                      | Host volume mount      | Code and agent artifacts                                                                                            |
 | WhatsApp session       | `/home/node/.openclaw/`                                | Host volume mount      | Preserves QR login                                                                                                  |
-| Gmail keyring          | `/home/node/.openclaw/`                                | Host volume + password | Requires `GOG_KEYRING_PASSWORD`                                                                                     |
+| Gmail keyring          | `/home/node/.openclaw/`                                | Host volume + password | Requires `GOG_KEYRING_PASSWORD`; separate from `gogcli/credentials.json`                                            |
 | Plugin packages        | `/home/node/.openclaw/npm`, `/home/node/.openclaw/git` | Host volume mount      | Downloadable plugin package roots                                                                                   |
 | External binaries      | `/usr/local/bin/`                                      | Docker image           | Must be baked at build time                                                                                         |
 | Node runtime           | Container filesystem                                   | Docker image           | Rebuilt every image build                                                                                           |

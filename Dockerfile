@@ -246,6 +246,25 @@ RUN --mount=type=cache,id=openclaw-bookworm-apt-cache,target=/var/cache/apt,shar
       DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends $packages; \
     fi
 
+# Bake gogcli into the image for Gmail watcher support. Override
+# OPENCLAW_GOGCLI_URL with a versioned release URL for reproducible builds.
+ARG TARGETARCH
+ARG OPENCLAW_GOGCLI_VERSION="0.29.0"
+ARG OPENCLAW_GOGCLI_URL=""
+RUN arch="${TARGETARCH:-$(dpkg --print-architecture)}"; \
+    if [ -n "$OPENCLAW_GOGCLI_URL" ]; then \
+      gogcli_url="$OPENCLAW_GOGCLI_URL"; \
+    else \
+      gogcli_version="${OPENCLAW_GOGCLI_VERSION#v}"; \
+      case "$arch" in \
+        amd64|x86_64) gogcli_url="https://github.com/openclaw/gogcli/releases/download/v${gogcli_version}/gogcli_${gogcli_version}_linux_amd64.tar.gz" ;; \
+        arm64|aarch64) gogcli_url="https://github.com/openclaw/gogcli/releases/download/v${gogcli_version}/gogcli_${gogcli_version}_linux_arm64.tar.gz" ;; \
+        *) echo "ERROR: unsupported gogcli architecture: $arch" >&2; exit 1 ;; \
+      esac; \
+    fi && \
+    curl -fsSL "$gogcli_url" | tar -xzO gog > /usr/local/bin/gog && \
+    chmod 755 /usr/local/bin/gog
+
 # Install additional Python packages needed by your plugins or skills.
 # Example: docker build --build-arg OPENCLAW_IMAGE_PIP_PACKAGES="requests humanize" .
 ARG OPENCLAW_IMAGE_PIP_PACKAGES=""

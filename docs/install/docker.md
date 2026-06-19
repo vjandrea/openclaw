@@ -329,6 +329,13 @@ That mounted config directory holds:
 
 The auth-profile secret directory stores the local encryption key for OAuth-backed auth profile token material. Keep it with your Docker host state, but separate from `OPENCLAW_CONFIG_DIR`.
 
+If you use `gog` for Gmail hooks, its OAuth client credentials live under
+`$XDG_CONFIG_HOME/gogcli/credentials.json` or
+`/home/node/.config/gogcli/credentials.json`, not in
+`/home/node/.config/openclaw`. Persist that path with `OPENCLAW_HOME_VOLUME`,
+`OPENCLAW_EXTRA_MOUNTS`, or by setting `XDG_CONFIG_HOME` to a mounted
+directory.
+
 Installed downloadable plugins store package state under the mounted OpenClaw home, so install records and package roots survive container replacement; gateway startup does not regenerate bundled-plugin dependency trees.
 
 For full VM persistence details, see [Docker VM Runtime - What persists where](/install/docker-vm-runtime#what-persists-where).
@@ -507,6 +514,28 @@ For npm installs without a source checkout, see [Sandboxing § Images and setup]
 
   <Accordion title="Custom tools not found in sandbox">
     OpenClaw runs commands with `sh -lc` (login shell), which sources `/etc/profile` and may reset PATH. Set `docker.env.PATH` to prepend your custom tool paths, or add a script under `/etc/profile.d/` in your Dockerfile.
+  </Accordion>
+
+  <Accordion title="Gmail watcher logs `gog binary not found`">
+    Current OpenClaw Docker builds install `gog` into `/usr/local/bin/gog`.
+    If you use an older image or a custom Dockerfile, rebuild an image that
+    includes `gog`, then restart the container:
+
+    ```bash
+    docker compose build
+    docker compose up -d openclaw-gateway
+    docker compose exec openclaw-gateway which gog
+    docker compose exec openclaw-gateway gog --help
+    ```
+
+    Persist `gog` credentials separately from OpenClaw auth profiles. Use
+    `OPENCLAW_HOME_VOLUME`, `OPENCLAW_EXTRA_MOUNTS`, or set `XDG_CONFIG_HOME`
+    to a mounted path so `gogcli/credentials.json` survives container
+    replacement.
+
+    See [Docker VM Runtime](/install/docker-vm-runtime) for the image recipe
+    and persistence layout.
+
   </Accordion>
 
   <Accordion title="OOM-killed during image build (exit 137)">
