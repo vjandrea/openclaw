@@ -135,6 +135,7 @@ Verify baked binaries:
 
 ```bash
 docker compose exec openclaw-gateway which gog
+docker compose exec openclaw-gateway gog --help
 docker compose exec openclaw-gateway which goplaces
 docker compose exec openclaw-gateway which wacli
 ```

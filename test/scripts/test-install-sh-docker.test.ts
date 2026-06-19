@@ -1138,7 +1138,7 @@ printf 'status=%s\\n' "$status"
     expect(runNonrootNodePreflight("26.12.1").status).toBe(0);
   });
 
-  it("runs the root Dockerfile build with the CI heap limit", () => {
+  it("runs the root Dockerfile build with the configured heap limit", () => {
     const dockerfile = readFileSync("Dockerfile", "utf8");
 
     expect(dockerfile).toContain(
