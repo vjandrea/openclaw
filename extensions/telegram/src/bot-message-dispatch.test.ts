@@ -423,6 +423,13 @@ describe("dispatchTelegramMessage draft streaming", () => {
     expect(preview.text).toBe(barText);
   }
 
+  function telegramProgressPreview(text: string, html: string) {
+    return {
+      text,
+      richMessage: { html: html.replaceAll("\n", "<br>"), skip_entity_detection: true },
+    };
+  }
+
   function createContext(overrides?: Partial<TelegramMessageContext>): TelegramMessageContext {
     const base = {
       ctxPayload: {},
