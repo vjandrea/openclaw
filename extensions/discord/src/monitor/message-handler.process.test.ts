@@ -3209,6 +3209,46 @@ describe("processDiscordMessage draft streaming", () => {
     expectFreshFinalText("done");
   });
 
+  it("replaces Discord command progress items with matching command output", async () => {
+    const draftStream = createMockDraftStreamForTest();
+
+    dispatchInboundMessage.mockImplementationOnce(async (params?: DispatchInboundParams) => {
+      await params?.replyOptions?.onToolStart?.({ name: "exec", phase: "start" });
+      await params?.replyOptions?.onItemEvent?.({
+        itemId: "tool:call-1",
+        toolCallId: "call-1",
+        kind: "command",
+        name: "exec",
+        progressText: "install dependencies",
+      });
+      await params?.replyOptions?.onCommandOutput?.({
+        itemId: "tool:call-1-output",
+        toolCallId: "call-1",
+        phase: "end",
+        name: "exec",
+        exitCode: 0,
+      });
+      return createNoQueuedDispatchResult();
+    });
+
+    const ctx = await createAutomaticSourceDeliveryContext({
+      discordConfig: {
+        streaming: {
+          mode: "progress",
+          progress: {
+            label: "Shelling",
+          },
+        },
+      },
+    });
+
+    await runProcessDiscordMessage(ctx);
+
+    const lastUpdate = draftStream.update.mock.calls.at(-1)?.[0];
+    expect(lastUpdate).toContain("install dependencies");
+    expect(lastUpdate).not.toContain("completed");
+  });
+
   it("drops later tool warning finals after progress preview final replies", async () => {
     const draftStream = createMockDraftStreamForTest();
 
